@@ -1,0 +1,20 @@
+{
+  "id": "/DIAMOND_APP/",
+  "name": "Stock & Purchase Register",
+  "short_name": "Diamond Stock",
+  "description": "Record diamond purchases, track stock inventory, and export both as CSV, Excel or PDF.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "finance"],
+  "background_color": "#F6F1E7",
+  "theme_color": "#1E2A38",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
