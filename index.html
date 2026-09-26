@@ -137,6 +137,7 @@
   nav.tabs button[data-tab="stock"].active { border-top-color: var(--steel); }
   nav.tabs button[data-tab="purchases"].active { border-top-color: var(--emerald); }
   nav.tabs button[data-tab="suppliers"].active { border-top-color: var(--gold); }
+  nav.tabs button[data-tab="customers"].active { border-top-color: var(--wax); }
 
   main { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px 20px; }
   .panel { display: none; }
@@ -232,6 +233,7 @@
     <button data-tab="stock" class="active">Stock</button>
     <button data-tab="purchases">Purchases</button>
     <button data-tab="suppliers">Suppliers</button>
+    <button data-tab="customers">Customers</button>
   </nav>
 </header>
 
@@ -252,7 +254,7 @@
       <table>
         <thead><tr>
           <th>Date taken</th><th>Stock ID</th><th>Shape</th><th class="num">Size (ct)</th><th>Colour</th><th>Purity</th>
-          <th>Lab</th><th>Location</th><th>Supplier</th><th></th>
+          <th>Lab</th><th>Location</th><th>Supplier</th><th>Customer</th><th>Customer date</th><th></th>
         </tr></thead>
         <tbody id="stockTableBody"></tbody>
       </table>
@@ -299,6 +301,24 @@
     </div>
   </section>
 
+  <!-- CUSTOMERS -->
+  <section class="panel" id="panel-customers">
+    <div class="section-head">
+      <h2 class="serif">Customers<span class="count" id="customerCount"></span></h2>
+      <div class="head-actions">
+        <button class="btn primary small" id="btnAddCustomer">+ Add customer</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Customer ID</th><th>Customer name</th><th></th>
+        </tr></thead>
+        <tbody id="customerTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
 </main>
 
 <!-- Add Supplier Modal -->
@@ -313,6 +333,42 @@
     <div class="modal-actions">
       <button class="btn" data-close="overlaySupplier">Cancel</button>
       <button class="btn primary" id="saveSupplier">Save supplier</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div class="overlay" id="overlayCustomer">
+  <div class="modal">
+    <h3 class="serif">Add customer</h3>
+    <div class="modal-sub">Customers you add here show up in the dropdown when giving a stone on jangaad to a customer. Each gets a permanent ID for future linking/analysis.</div>
+    <div class="form-grid">
+      <div><label>Customer ID (auto)</label><input id="cust_id" readonly></div>
+      <div><label>Customer name</label><input id="cust_name" placeholder="e.g. MILANBHAI"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close="overlayCustomer">Cancel</button>
+      <button class="btn primary" id="saveCustomer">Save customer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Stone to Customer Modal -->
+<div class="overlay" id="overlayAssignCustomer">
+  <div class="modal">
+    <h3 class="serif">Give stone to customer</h3>
+    <div class="modal-sub">Records which customer currently has this stone on jangaad. It stays in Stock either way — this is just who has it right now.</div>
+    <div class="form-grid">
+      <div class="full" id="ac_stockInfo" style="font-size:12.5px; color:var(--ink-faint);"></div>
+      <div class="full"><label>Customer</label>
+        <select id="ac_customer"><option value="">— none / not yet given —</option></select>
+      </div>
+      <div class="full"><label>Customer jangaad date</label><input id="ac_date" type="date"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close="overlayAssignCustomer">Cancel</button>
+      <button class="btn" id="clearAssignCustomer">Clear</button>
+      <button class="btn primary" id="saveAssignCustomer">Save</button>
     </div>
   </div>
 </div>
@@ -452,7 +508,8 @@
     var stones = [
       {stockId:"AK103", date:"2026-02-25", supplier:"PRIYANK", shape:"PRINCESS", size:0.50, colour:"G", purity:"VS2", lab:"GIA", location:"DELHI"},
       {stockId:"AK104", date:"2026-02-28", supplier:"MEIT", shape:"PRINCESS", size:0.60, colour:"G", purity:"VS2", lab:"GIA", location:"SURAT"},
-      {stockId:"AK105", date:"2026-03-04", supplier:"RAHUL", shape:"OVAL", size:1.02, colour:"F", purity:"VVS2", lab:"GIA", location:"MUMBAI"}
+      {stockId:"AK105", date:"2026-03-04", supplier:"RAHUL", shape:"OVAL", size:1.02, colour:"F", purity:"VVS2", lab:"GIA", location:"MUMBAI",
+        customer:"MILANBHAI", customerId:"CUS001", customerDate:"2026-03-06"}
     ];
     var purchases = [
       {id:uid("PU-"), stockId:"AK101", date:"2026-02-20", supplier:"AKSHAY", broker:"NISHIT", partner:"AKSHAY",
@@ -467,6 +524,9 @@
       {id:"SUP002", name:"MEIT"},
       {id:"SUP003", name:"PRIYANK"},
       {id:"SUP004", name:"RAHUL"}
+    ], customers: [
+      {id:"CUS001", name:"MILANBHAI"},
+      {id:"CUS002", name:"NILESH"}
     ]};
   }
 
@@ -486,44 +546,38 @@
 
   var state = loadState();
 
-  function ensureNextSeq(){
-    if (!state.nextSeq){
-      var maxNum = 105;
-      state.stones.forEach(function(s){
-        var m = /(\d+)\s*$/.exec(s.stockId || "");
-        if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
-      });
-      state.purchases.forEach(function(p){
-        var m = /(\d+)\s*$/.exec(p.stockId || "");
-        if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
-      });
-      state.nextSeq = maxNum + 1;
-      saveState(state);
-    }
+  function stockIdInUse(id){
+    return state.stones.some(function(s){ return s.stockId === id; }) ||
+           state.purchases.some(function(p){ return p.stockId === id; });
   }
-  ensureNextSeq();
-  function nextStockId(){ return "AK" + state.nextSeq; }
+  function nextStockId(){
+    var n = 101;
+    while (stockIdInUse("AK" + n)) n++;
+    return "AK" + n;
+  }
 
-  if (!state.nextSupplierSeq) state.nextSupplierSeq = 1;
-  function peekSupplierId(){ return "SUP" + String(state.nextSupplierSeq).padStart(3, "0"); }
-  function nextSupplierId(){
-    var id = peekSupplierId();
-    state.nextSupplierSeq++;
-    return id;
+  function supplierIdInUse(id){
+    return state.suppliers.some(function(s){ return s.id === id; });
   }
+  function peekSupplierId(){
+    var n = 1;
+    while (supplierIdInUse("SUP" + String(n).padStart(3, "0"))) n++;
+    return "SUP" + String(n).padStart(3, "0");
+  }
+  function nextSupplierId(){ return peekSupplierId(); }
 
   function ensureSuppliers(){
     if (!state.suppliers){
       // Very old installs with no supplier list at all: build one from names already in use.
       var seen = {};
       var list = [];
+      state.suppliers = list; // so supplierIdInUse() has something to check against while assigning
       state.stones.forEach(function(s){
-        if (s.supplier && !seen[s.supplier]){ seen[s.supplier] = true; list.push({id: nextSupplierId(), name: s.supplier}); }
+        if (s.supplier && !seen[s.supplier]){ seen[s.supplier] = true; var id = nextSupplierId(); list.push({id: id, name: s.supplier}); }
       });
       state.purchases.forEach(function(p){
-        if (p.supplier && !seen[p.supplier]){ seen[p.supplier] = true; list.push({id: nextSupplierId(), name: p.supplier}); }
+        if (p.supplier && !seen[p.supplier]){ seen[p.supplier] = true; var id = nextSupplierId(); list.push({id: id, name: p.supplier}); }
       });
-      state.suppliers = list;
     } else {
       // Older installs that stored {name, date} without an id: backfill one, dropping date.
       state.suppliers.forEach(function(s){
@@ -544,19 +598,28 @@
       if (p.supplier && !p.supplierId) p.supplierId = idForName(p.supplier);
     });
 
-    // Make sure the counter is past every ID already in use (covers seeded data too).
-    var maxSeq = state.nextSupplierSeq - 1;
-    state.suppliers.forEach(function(s){
-      var m = /(\d+)\s*$/.exec(s.id || "");
-      if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
-    });
-    state.nextSupplierSeq = maxSeq + 1;
-
     saveState(state);
   }
   ensureSuppliers();
   function findSupplier(name){ return state.suppliers.find(function(s){ return s.name === name; }); }
   function findSupplierById(id){ return state.suppliers.find(function(s){ return s.id === id; }); }
+
+  function customerIdInUse(id){
+    return state.customers.some(function(c){ return c.id === id; });
+  }
+  function peekCustomerId(){
+    var n = 1;
+    while (customerIdInUse("CUS" + String(n).padStart(3, "0"))) n++;
+    return "CUS" + String(n).padStart(3, "0");
+  }
+  function nextCustomerId(){ return peekCustomerId(); }
+  function ensureCustomers(){
+    if (!state.customers) state.customers = [];
+    saveState(state);
+  }
+  ensureCustomers();
+  function findCustomer(name){ return state.customers.find(function(c){ return c.name === name; }); }
+  function findCustomerById(id){ return state.customers.find(function(c){ return c.id === id; }); }
 
   // ---------- Theme ----------
   function initTheme(){
@@ -615,13 +678,14 @@
     renderStock();
     renderPurchases();
     renderSuppliers();
+    renderCustomers();
   }
 
   function renderStock(){
     document.getElementById("stockCount").textContent = " (" + state.stones.length + ")";
     var body = document.getElementById("stockTableBody");
     if (state.stones.length === 0){
-      body.innerHTML = '<tr><td colspan="10" class="empty">No stones on jangaad. Take a stone on jangaad to bring it into stock.</td></tr>';
+      body.innerHTML = '<tr><td colspan="12" class="empty">No stones on jangaad. Take a stone on jangaad to bring it into stock.</td></tr>';
       return;
     }
     var sorted = state.stones.slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
@@ -629,7 +693,11 @@
       return '<tr><td>'+fmtDate(s.date)+'</td><td class="mono">'+s.stockId+'</td><td>'+s.shape+'</td><td class="num mono">'+s.size.toFixed(2)+'</td>'+
         '<td>'+s.colour+'</td><td>'+s.purity+'</td><td>'+s.lab+'</td><td>'+s.location+'</td>'+
         '<td>'+(s.supplier||"—")+'</td>'+
-        '<td class="actions-cell"><button class="row-del" data-type="stone" data-id="'+s.stockId+'" title="Delete">🗑</button></td></tr>';
+        '<td>'+(s.customer||"—")+'</td><td>'+(s.customerDate?fmtDate(s.customerDate):"—")+'</td>'+
+        '<td class="actions-cell">'+
+          '<button class="row-del" data-type="assign-customer" data-id="'+s.stockId+'" title="Give to customer" style="color:var(--wax);">🤝</button>'+
+          '<button class="row-del" data-type="stone" data-id="'+s.stockId+'" title="Delete">🗑</button>'+
+        '</td></tr>';
     }).join("");
   }
 
@@ -671,6 +739,27 @@
     var optionsHtml = sorted.map(function(s){ return '<option value="'+s.id+'">'+s.name+'</option>'; }).join("");
     document.getElementById("j_supplier").innerHTML = optionsHtml;
     document.getElementById("p_supplier").innerHTML = optionsHtml;
+  }
+
+  function renderCustomers(){
+    document.getElementById("customerCount").textContent = " (" + state.customers.length + ")";
+    var body = document.getElementById("customerTableBody");
+    if (state.customers.length === 0){
+      body.innerHTML = '<tr><td colspan="3" class="empty">No customers yet. Add one to start giving stones on jangaad.</td></tr>';
+      return;
+    }
+    var sorted = state.customers.slice().sort(function(a,b){ return a.id.localeCompare(b.id); });
+    body.innerHTML = sorted.map(function(c){
+      return '<tr><td class="mono">'+c.id+'</td><td>'+c.name+'</td>'+
+        '<td class="actions-cell"><button class="row-del" data-type="customer" data-id="'+c.id+'" title="Delete">🗑</button></td></tr>';
+    }).join("");
+  }
+
+  function populateCustomerSelects(){
+    var sorted = state.customers.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+    var optionsHtml = '<option value="">— none / not yet given —</option>' +
+      sorted.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join("");
+    document.getElementById("ac_customer").innerHTML = optionsHtml;
   }
 
   // ---------- Rap rate: auto (Rapaport) vs manual ----------
@@ -766,6 +855,70 @@
     showToast(name + " added as " + id + ".");
   });
 
+  // ---------- Add Customer ----------
+  document.getElementById("btnAddCustomer").addEventListener("click", function(){
+    document.getElementById("cust_id").value = peekCustomerId();
+    document.getElementById("cust_name").value = "";
+    openModal("overlayCustomer");
+  });
+
+  document.getElementById("saveCustomer").addEventListener("click", function(){
+    var name = document.getElementById("cust_name").value.trim();
+    if (!name){ showToast("Customer name is required."); return; }
+    if (findCustomer(name)){ showToast("That customer already exists."); return; }
+    var id = nextCustomerId();
+    state.customers.push({ id: id, name: name });
+    saveState(state);
+    renderAll();
+    closeModal("overlayCustomer");
+    showToast(name + " added as " + id + ".");
+  });
+
+  // ---------- Give stone to customer ----------
+  function openAssignCustomerModal(stockId){
+    var stone = findStone(stockId);
+    if (!stone){ showToast("That stone isn't in stock anymore."); return; }
+    populateCustomerSelects();
+    document.getElementById("ac_stockInfo").textContent =
+      stockId + " — " + stone.shape + " " + stone.size.toFixed(2) + "ct " + stone.colour + "/" + stone.purity +
+      " (taken from " + (stone.supplier || "—") + " on " + fmtDate(stone.date) + ")";
+    document.getElementById("ac_customer").value = stone.customerId || "";
+    // Default to the supplier jangaad date unless a customer date was already set for this stone.
+    document.getElementById("ac_date").value = stone.customerDate || stone.date || todayISO();
+    document.getElementById("overlayAssignCustomer").dataset.stockId = stockId;
+    openModal("overlayAssignCustomer");
+  }
+
+  document.getElementById("saveAssignCustomer").addEventListener("click", function(){
+    var stockId = document.getElementById("overlayAssignCustomer").dataset.stockId;
+    var stone = findStone(stockId);
+    if (!stone){ showToast("That stone isn't in stock anymore."); return; }
+    var customerId = document.getElementById("ac_customer").value;
+    if (!customerId){ showToast("Select a customer, or use Clear to unassign."); return; }
+    var customer = findCustomerById(customerId);
+    if (!customer){ showToast("Select a customer."); return; }
+    stone.customer = customer.name;
+    stone.customerId = customer.id;
+    stone.customerDate = document.getElementById("ac_date").value || stone.date || todayISO();
+    saveState(state);
+    renderAll();
+    closeModal("overlayAssignCustomer");
+    showToast(stockId + " given to " + customer.name + ".");
+  });
+
+  document.getElementById("clearAssignCustomer").addEventListener("click", function(){
+    var stockId = document.getElementById("overlayAssignCustomer").dataset.stockId;
+    var stone = findStone(stockId);
+    if (!stone){ closeModal("overlayAssignCustomer"); return; }
+    delete stone.customer;
+    delete stone.customerId;
+    delete stone.customerDate;
+    saveState(state);
+    renderAll();
+    closeModal("overlayAssignCustomer");
+    showToast(stockId + " is no longer marked as given to a customer.");
+  });
+
   // ---------- Take on Jangaad ----------
   document.getElementById("btnAddJangaad").addEventListener("click", function(){
     if (state.suppliers.length === 0){
@@ -801,7 +954,6 @@
       lab: document.getElementById("j_lab").value,
       location: document.getElementById("j_location").value.trim() || "—"
     });
-    state.nextSeq = state.nextSeq + 1;
     saveState(state);
     renderAll();
     closeModal("overlayJangaad");
@@ -858,6 +1010,9 @@
       purity: stone.purity,
       lab: stone.lab,
       location: stone.location,
+      customer: stone.customer || "",
+      customerId: stone.customerId || "",
+      customerDate: stone.customerDate || "",
       rap: parseFloat(document.getElementById("p_rap").value) || 0,
       discount: parseFloat(document.getElementById("p_discount").value) || 0,
       less: parseFloat(document.getElementById("p_less").value) || 0,
@@ -901,6 +1056,16 @@
       saveState(state);
       renderAll();
       showToast("Supplier removed.");
+    } else if (type === "customer"){
+      var customer = findCustomerById(id);
+      if (!customer) return;
+      if (!confirm('Remove customer "' + customer.name + '" (' + id + ')? Stock records keep the name and ID on file.')) return;
+      state.customers = state.customers.filter(function(c){ return c.id !== id; });
+      saveState(state);
+      renderAll();
+      showToast("Customer removed.");
+    } else if (type === "assign-customer"){
+      openAssignCustomerModal(id);
     }
   }
   document.addEventListener("click", function(e){
@@ -927,18 +1092,18 @@
     if (source === "stock"){
       return {
         title: "Stock",
-        headers: ["Date taken","Stock ID","Shape","Size (ct)","Colour","Purity","Lab","Location","Supplier","Supplier ID"],
+        headers: ["Date taken","Stock ID","Shape","Size (ct)","Colour","Purity","Lab","Location","Supplier","Supplier ID","Customer","Customer ID","Customer jangaad date"],
         rows: state.stones.map(function(s){
-          return [s.date || "", s.stockId, s.shape, s.size.toFixed(2), s.colour, s.purity, s.lab, s.location, s.supplier || "", s.supplierId || ""];
+          return [s.date || "", s.stockId, s.shape, s.size.toFixed(2), s.colour, s.purity, s.lab, s.location, s.supplier || "", s.supplierId || "", s.customer || "", s.customerId || "", s.customerDate || ""];
         })
       };
     }
     return {
       title: "Purchases",
-      headers: ["Date","Stock ID","Supplier","Supplier ID","Broker","Shape","Size","Rap $/ct","Disc %","Less %","$ Rate","GST %","Expenses ₹","Total ₹","Paid"],
+      headers: ["Date","Stock ID","Supplier","Supplier ID","Customer","Customer ID","Broker","Shape","Size","Rap $/ct","Disc %","Less %","$ Rate","GST %","Expenses ₹","Total ₹","Paid"],
       rows: state.purchases.map(function(p){
         return [
-          p.date, p.stockId, p.supplier || "", p.supplierId || "", p.broker, p.shape || "", p.size !== undefined ? p.size.toFixed(2) : "",
+          p.date, p.stockId, p.supplier || "", p.supplierId || "", p.customer || "", p.customerId || "", p.broker, p.shape || "", p.size !== undefined ? p.size.toFixed(2) : "",
           p.rap, p.discount, p.less, p.dollarRate, p.gst, p.expenses, p.total.toFixed(2), p.paid === "Y" ? "Paid" : "Not paid"
         ];
       })
