@@ -136,6 +136,7 @@
   nav.tabs button.active { color: var(--ink); font-weight: 600; }
   nav.tabs button[data-tab="stock"].active { border-top-color: var(--steel); }
   nav.tabs button[data-tab="purchases"].active { border-top-color: var(--emerald); }
+  nav.tabs button[data-tab="returns"].active { border-top-color: var(--ink-faint); }
   nav.tabs button[data-tab="suppliers"].active { border-top-color: var(--gold); }
   nav.tabs button[data-tab="customers"].active { border-top-color: var(--wax); }
 
@@ -147,6 +148,13 @@
   .section-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
   .section-head .count { color: var(--ink-faint); font-size: 13px; margin-left: 8px; font-weight: 400; }
   .head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bulk-bar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    background: var(--bg-sunken); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 14px;
+  }
+  .bulk-count { font-size: 13px; font-weight: 600; color: var(--ink); }
+  input.row-check { width: auto; cursor: pointer; }
 
   .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; }
   table { width: 100%; border-collapse: collapse; background: var(--bg-elevated); font-size: 13.5px; }
@@ -232,6 +240,7 @@
   <nav class="tabs" id="tabStrip">
     <button data-tab="stock" class="active">Stock</button>
     <button data-tab="purchases">Purchases</button>
+    <button data-tab="returns">Returns</button>
     <button data-tab="suppliers">Suppliers</button>
     <button data-tab="customers">Customers</button>
   </nav>
@@ -250,9 +259,18 @@
         <button class="btn primary small" id="btnAddJangaad">+ Take on jangaad</button>
       </div>
     </div>
+    <div id="bulkBar" class="bulk-bar" style="display:none;">
+      <span id="bulkCount" class="bulk-count"></span>
+      <div class="head-actions">
+        <button class="btn small" id="btnBulkReturn">↩ Return selected to supplier</button>
+        <button class="btn primary small" id="btnBulkPurchase">✓ Convert selected to purchase</button>
+        <button class="btn small" id="btnClearSelection">Clear</button>
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr>
+          <th style="width:1%;"><input type="checkbox" id="selectAllStock"></th>
           <th>Date taken</th><th>Stock ID</th><th>Shape</th><th class="num">Size (ct)</th><th>Colour</th><th>Purity</th>
           <th>Lab</th><th>Location</th><th>Supplier</th><th>Customer</th><th>Customer date</th><th></th>
         </tr></thead>
@@ -275,10 +293,30 @@
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Date</th><th>Stock ID</th><th>Supplier</th><th>Broker</th><th>Shape</th><th class="num">Size</th>
+          <th>Date</th><th>Stock ID</th><th>Jangaad ID</th><th>Supplier</th><th>Broker</th><th>Shape</th><th class="num">Size</th>
           <th class="num">Rap $/ct</th><th class="num">Disc %</th><th class="num">Total ₹</th><th>Paid</th><th></th>
         </tr></thead>
         <tbody id="purchaseTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RETURNS -->
+  <section class="panel" id="panel-returns">
+    <div class="section-head">
+      <h2 class="serif">Returns <span style="font-weight:400; color:var(--ink-faint); font-size:13px;">— given back to supplier</span><span class="count" id="returnCount"></span></h2>
+      <div class="head-actions">
+        <button class="btn small" data-export="csv" data-source="returns">⬇ CSV</button>
+        <button class="btn small" data-export="xlsx" data-source="returns">⬇ Excel</button>
+        <button class="btn small" data-export="pdf" data-source="returns">⬇ PDF</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Date returned</th><th>Stock ID</th><th>Supplier</th><th>Shape</th><th class="num">Size</th><th>Colour</th><th>Purity</th><th>Notes</th><th></th>
+        </tr></thead>
+        <tbody id="returnTableBody"></tbody>
       </table>
     </div>
   </section>
@@ -453,6 +491,62 @@
   </div>
 </div>
 
+<!-- Bulk Return to Supplier Modal -->
+<div class="overlay" id="overlayBulkReturn">
+  <div class="modal">
+    <h3 class="serif">Return stones to supplier</h3>
+    <div class="modal-sub">These stones leave Stock and are logged in Returns for your records.</div>
+    <div class="form-grid">
+      <div class="full" id="br_list" style="font-size:12.5px; color:var(--ink-faint);"></div>
+      <div><label>Date returned</label><input id="br_date" type="date"></div>
+      <div class="full"><label>Notes (optional)</label><input id="br_notes" placeholder="e.g. size didn't match order"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close="overlayBulkReturn">Cancel</button>
+      <button class="btn primary" id="saveBulkReturn">Return stones</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Convert to Purchase Modal -->
+<div class="overlay" id="overlayBulkPurchase">
+  <div class="modal">
+    <h3 class="serif">Convert stones to purchase</h3>
+    <div class="modal-sub">Applies the same commercial terms to every selected stone (Rap still looks up per-stone when Auto is on). Each stone keeps its own size, so totals are calculated individually.</div>
+    <div class="form-grid">
+      <div class="full" id="bp_list" style="font-size:12.5px; color:var(--ink-faint);"></div>
+      <div><label>Date</label><input id="bp_date" type="date"></div>
+      <div><label>Broker</label><input id="bp_broker" placeholder="e.g. NISHIT"></div>
+      <div><label>Partner (co-owner)</label><input id="bp_partner" placeholder="e.g. AKSHAY"></div>
+      <div class="full">
+        <label>Rap rate ($/ct)</label>
+        <div style="display:flex; gap:16px; margin-bottom:6px;">
+          <label style="display:flex; align-items:center; gap:5px; font-size:12.5px; font-weight:500; color:var(--ink-soft); margin-bottom:0;">
+            <input type="radio" name="bp_rap_mode" id="bp_rap_auto" checked style="width:auto;"> Auto (Rapaport, per stone)
+          </label>
+          <label style="display:flex; align-items:center; gap:5px; font-size:12.5px; font-weight:500; color:var(--ink-soft); margin-bottom:0;">
+            <input type="radio" name="bp_rap_mode" id="bp_rap_manual" style="width:auto;"> Manual (same $/ct for all)
+          </label>
+        </div>
+        <input id="bp_rap_manual_value" type="number" step="0.01" placeholder="1800" disabled>
+      </div>
+      <div><label>Discount (%)</label><input id="bp_discount" type="number" step="0.01" placeholder="55"></div>
+      <div><label>Less (%)</label><input id="bp_less" type="number" step="0.01" placeholder="2"></div>
+      <div><label>$ Rate (₹ per $)</label><input id="bp_dollarrate" type="number" step="0.01" placeholder="83"></div>
+      <div><label>GST (%)</label><input id="bp_gst" type="number" step="0.01" placeholder="3"></div>
+      <div><label>Expenses per stone (₹)</label><input id="bp_expenses" type="number" step="0.01" placeholder="0"></div>
+      <div><label>Paid</label>
+        <select id="bp_paid"><option value="Y">Yes</option><option value="N">Not paid</option></select>
+      </div>
+      <div class="full" id="bp_preview" style="font-size:11.5px; color:var(--ink-faint);"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close="overlayBulkPurchase">Cancel</button>
+      <button class="btn primary" id="saveBulkPurchase">Convert all</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -546,14 +640,81 @@
 
   var state = loadState();
 
-  function stockIdInUse(id){
-    return state.stones.some(function(s){ return s.stockId === id; }) ||
-           state.purchases.some(function(p){ return p.stockId === id; });
+  function seriesMax(list, idField, prefix){
+    var re = new RegExp("^" + prefix + "(\\d+)$");
+    var max = 0;
+    list.forEach(function(item){
+      var m = re.exec(item[idField] || "");
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    });
+    return max;
   }
-  function nextStockId(){
-    var n = 101;
-    while (stockIdInUse("AK" + n)) n++;
-    return "AK" + n;
+
+  // One-time migration: any Stock/Jangaad entries still carrying the old "AK" prefix
+  // (from before Jangaad and Purchase got separate ID series) move to "JG" so the
+  // two series never collide going forward.
+  (function migrateStockPrefix(){
+    var changed = false;
+    var maxJG = Math.max(100, seriesMax(state.stones, "stockId", "JG"));
+    state.stones.forEach(function(s){
+      if (/^AK\d+$/.test(s.stockId || "")){
+        maxJG++;
+        s.stockId = "JG" + maxJG;
+        changed = true;
+      }
+    });
+    if (changed) saveState(state);
+  })();
+
+  // Persisted, forward-only counters for each series. These are independent of what's
+  // currently live — removing something via Purchase/Return never moves them backward,
+  // only an explicit Delete (via compactAfterDelete, below) pulls the counter back by one.
+  if (!state.jgSeq){
+    // Cover current stock, plus JG numbers referenced historically in Returns and in
+    // Purchases' jangaadId, so a freshly-upgraded install can't collide with the past.
+    var jgFromStones = seriesMax(state.stones, "stockId", "JG");
+    var jgFromReturns = seriesMax(state.returns || [], "stockId", "JG");
+    var jgFromPurchases = seriesMax((state.purchases || []).map(function(p){ return {stockId: p.jangaadId || ""}; }), "stockId", "JG");
+    state.jgSeq = Math.max(100, jgFromStones, jgFromReturns, jgFromPurchases) + 1;
+    saveState(state);
+  }
+  if (!state.akSeq){
+    state.akSeq = Math.max(100, seriesMax(state.purchases, "stockId", "AK")) + 1;
+    saveState(state);
+  }
+
+  function peekStockId(){ return "JG" + state.jgSeq; }
+  function commitStockId(){ state.jgSeq++; }
+  function nextStockId(){ return peekStockId(); }
+
+  function nextPurchaseStockId(){
+    var id = "AK" + state.akSeq;
+    state.akSeq++;
+    return id;
+  }
+
+  // Delete only: close the gap immediately by renaming the current highest entry
+  // in that series down into the slot the deleted one leaves behind, and pull the
+  // series counter back by one so the next new entry lands right after it.
+  function compactAfterDelete(list, idField, prefix, deletedId, seqField){
+    var m = new RegExp("^" + prefix + "(\\d+)$").exec(deletedId || "");
+    if (!m) return;
+    var deletedNum = parseInt(m[1], 10);
+    var re = new RegExp("^" + prefix + "(\\d+)$");
+    var maxNum = 0, maxItem = null;
+    list.forEach(function(item){
+      var mm = re.exec(item[idField] || "");
+      if (mm){
+        var n = parseInt(mm[1], 10);
+        if (n > maxNum){ maxNum = n; maxItem = item; }
+      }
+    });
+    if (maxItem && maxNum > deletedNum){
+      maxItem[idField] = prefix + deletedNum;
+    }
+    if (seqField && state[seqField] > 101){
+      state[seqField] = state[seqField] - 1;
+    }
   }
 
   function supplierIdInUse(id){
@@ -621,6 +782,12 @@
   function findCustomer(name){ return state.customers.find(function(c){ return c.name === name; }); }
   function findCustomerById(id){ return state.customers.find(function(c){ return c.id === id; }); }
 
+  function ensureReturns(){
+    if (!state.returns) state.returns = [];
+    saveState(state);
+  }
+  ensureReturns();
+
   // ---------- Theme ----------
   function initTheme(){
     var saved = null;
@@ -673,10 +840,25 @@
   function findStone(stockId){ return state.stones.find(function(s){ return s.stockId === stockId; }); }
   function findPurchase(stockId){ return state.purchases.find(function(p){ return p.stockId === stockId; }); }
 
+  // ---------- Bulk selection ----------
+  var selectedStock = new Set();
+
+  function updateBulkBar(){
+    var bar = document.getElementById("bulkBar");
+    var n = selectedStock.size;
+    if (n === 0){
+      bar.style.display = "none";
+      return;
+    }
+    bar.style.display = "flex";
+    document.getElementById("bulkCount").textContent = n + " stone" + (n === 1 ? "" : "s") + " selected";
+  }
+
   // ---------- Renderers ----------
   function renderAll(){
     renderStock();
     renderPurchases();
+    renderReturns();
     renderSuppliers();
     renderCustomers();
   }
@@ -684,20 +866,68 @@
   function renderStock(){
     document.getElementById("stockCount").textContent = " (" + state.stones.length + ")";
     var body = document.getElementById("stockTableBody");
+    // Drop selection for any stockId no longer in Stock (converted/returned/deleted elsewhere).
+    var liveIds = {};
+    state.stones.forEach(function(s){ liveIds[s.stockId] = true; });
+    selectedStock.forEach(function(id){ if (!liveIds[id]) selectedStock.delete(id); });
+
     if (state.stones.length === 0){
-      body.innerHTML = '<tr><td colspan="12" class="empty">No stones on jangaad. Take a stone on jangaad to bring it into stock.</td></tr>';
+      body.innerHTML = '<tr><td colspan="13" class="empty">No stones on jangaad. Take a stone on jangaad to bring it into stock.</td></tr>';
+      document.getElementById("selectAllStock").checked = false;
+      updateBulkBar();
       return;
     }
     var sorted = state.stones.slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
     body.innerHTML = sorted.map(function(s){
-      return '<tr><td>'+fmtDate(s.date)+'</td><td class="mono">'+s.stockId+'</td><td>'+s.shape+'</td><td class="num mono">'+s.size.toFixed(2)+'</td>'+
+      var checked = selectedStock.has(s.stockId) ? "checked" : "";
+      return '<tr><td><input type="checkbox" class="row-check" data-stock-id="'+s.stockId+'" '+checked+'></td>'+
+        '<td>'+fmtDate(s.date)+'</td><td class="mono">'+s.stockId+'</td><td>'+s.shape+'</td><td class="num mono">'+s.size.toFixed(2)+'</td>'+
         '<td>'+s.colour+'</td><td>'+s.purity+'</td><td>'+s.lab+'</td><td>'+s.location+'</td>'+
         '<td>'+(s.supplier||"—")+'</td>'+
         '<td>'+(s.customer||"—")+'</td><td>'+(s.customerDate?fmtDate(s.customerDate):"—")+'</td>'+
         '<td class="actions-cell">'+
           '<button class="row-del" data-type="assign-customer" data-id="'+s.stockId+'" title="Give to customer" style="color:var(--wax);">🤝</button>'+
-          '<button class="row-del" data-type="stone" data-id="'+s.stockId+'" title="Delete">🗑</button>'+
+          '<button class="row-del" data-type="return-stone" data-id="'+s.stockId+'" title="Return to supplier">↩</button>'+
+          '<button class="row-del" data-type="delete-stone" data-id="'+s.stockId+'" title="Delete entry (mistake correction)">🗑</button>'+
         '</td></tr>';
+    }).join("");
+    document.getElementById("selectAllStock").checked = selectedStock.size > 0 && selectedStock.size === state.stones.length;
+    updateBulkBar();
+  }
+
+  document.getElementById("stockTableBody").addEventListener("change", function(e){
+    if (!e.target.classList.contains("row-check")) return;
+    var id = e.target.dataset.stockId;
+    if (e.target.checked) selectedStock.add(id); else selectedStock.delete(id);
+    document.getElementById("selectAllStock").checked = selectedStock.size > 0 && selectedStock.size === state.stones.length;
+    updateBulkBar();
+  });
+  document.getElementById("selectAllStock").addEventListener("change", function(e){
+    if (e.target.checked){
+      state.stones.forEach(function(s){ selectedStock.add(s.stockId); });
+    } else {
+      selectedStock.clear();
+    }
+    renderStock();
+  });
+  document.getElementById("btnClearSelection").addEventListener("click", function(){
+    selectedStock.clear();
+    renderStock();
+  });
+
+  function renderReturns(){
+    document.getElementById("returnCount").textContent = " (" + state.returns.length + ")";
+    var body = document.getElementById("returnTableBody");
+    if (state.returns.length === 0){
+      body.innerHTML = '<tr><td colspan="9" class="empty">No returns logged yet.</td></tr>';
+      return;
+    }
+    var sorted = state.returns.slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
+    body.innerHTML = sorted.map(function(r){
+      return '<tr><td>'+fmtDate(r.date)+'</td><td class="mono">'+r.stockId+'</td><td>'+(r.supplier||"—")+'</td>'+
+        '<td>'+(r.shape||"—")+'</td><td class="num mono">'+(r.size!==undefined?r.size.toFixed(2):"—")+'</td>'+
+        '<td>'+(r.colour||"—")+'</td><td>'+(r.purity||"—")+'</td><td>'+(r.notes||"—")+'</td>'+
+        '<td class="actions-cell"><button class="row-del" data-type="return" data-id="'+r.id+'" title="Delete">🗑</button></td></tr>';
     }).join("");
   }
 
@@ -705,14 +935,14 @@
     document.getElementById("purchaseCount").textContent = " (" + state.purchases.length + ")";
     var body = document.getElementById("purchaseTableBody");
     if (state.purchases.length === 0){
-      body.innerHTML = '<tr><td colspan="11" class="empty">No purchases recorded yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="12" class="empty">No purchases recorded yet.</td></tr>';
       return;
     }
     var sorted = state.purchases.slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
     body.innerHTML = sorted.map(function(p){
       var paidCls = p.paid === "Y" ? "paid" : "not-paid";
       var paidLabel = p.paid === "Y" ? "Paid" : "Not paid";
-      return '<tr><td>'+fmtDate(p.date)+'</td><td class="mono">'+p.stockId+'</td><td>'+(p.supplier||"—")+'</td><td>'+p.broker+'</td>'+
+      return '<tr><td>'+fmtDate(p.date)+'</td><td class="mono">'+p.stockId+'</td><td class="mono">'+(p.jangaadId||"—")+'</td><td>'+(p.supplier||"—")+'</td><td>'+p.broker+'</td>'+
         '<td>'+(p.shape||"—")+'</td><td class="num mono">'+(p.size!==undefined?p.size.toFixed(2):"—")+'</td>'+
         '<td class="num mono">'+fmtUSD(p.rap)+'</td><td class="num mono">'+p.discount+'%</td>'+
         '<td class="num mono">'+fmtINR(p.total)+'</td><td><span class="badge '+paidCls+'">'+paidLabel+'</span></td>'+
@@ -954,6 +1184,7 @@
       lab: document.getElementById("j_lab").value,
       location: document.getElementById("j_location").value.trim() || "—"
     });
+    commitStockId();
     saveState(state);
     renderAll();
     closeModal("overlayJangaad");
@@ -998,7 +1229,8 @@
 
     state.purchases.push({
       id: uid("PU-"),
-      stockId: stone.stockId,
+      stockId: nextPurchaseStockId(),
+      jangaadId: stone.stockId,
       date: document.getElementById("p_date").value || todayISO(),
       supplier: supplierRec.name,
       supplierId: supplierRec.id,
@@ -1030,24 +1262,219 @@
     showToast(stone.stockId + " converted to a purchase — removed from jangaad stock.");
   });
 
+  // ---------- Bulk return to supplier ----------
+  document.getElementById("btnBulkReturn").addEventListener("click", function(){
+    if (selectedStock.size === 0) return;
+    var ids = Array.from(selectedStock);
+    document.getElementById("br_list").textContent = ids.length + " stone" + (ids.length===1?"":"s") + ": " + ids.join(", ");
+    document.getElementById("br_date").value = todayISO();
+    document.getElementById("br_notes").value = "";
+    openModal("overlayBulkReturn");
+  });
+
+  document.getElementById("saveBulkReturn").addEventListener("click", function(){
+    var ids = Array.from(selectedStock);
+    if (ids.length === 0){ closeModal("overlayBulkReturn"); return; }
+    var date = document.getElementById("br_date").value || todayISO();
+    var notes = document.getElementById("br_notes").value.trim();
+    var count = 0;
+    ids.forEach(function(id){
+      var stone = findStone(id);
+      if (stone){ returnStoneToSupplier(stone, date, notes); count++; }
+    });
+    selectedStock.clear();
+    saveState(state);
+    renderAll();
+    closeModal("overlayBulkReturn");
+    showToast(count + " stone" + (count===1?"":"s") + " returned to supplier.");
+  });
+
+  // ---------- Bulk convert to purchase ----------
+  function bulkSelectedStones(){
+    return Array.from(selectedStock).map(findStone).filter(Boolean);
+  }
+
+  function updateBulkPurchasePreview(){
+    var stones = bulkSelectedStones();
+    var manualMode = document.getElementById("bp_rap_auto").checked === false;
+    var manualRap = parseFloat(document.getElementById("bp_rap_manual_value").value) || 0;
+    var discount = parseFloat(document.getElementById("bp_discount").value) || 0;
+    var less = parseFloat(document.getElementById("bp_less").value) || 0;
+    var dollarRate = parseFloat(document.getElementById("bp_dollarrate").value) || 0;
+    var gst = parseFloat(document.getElementById("bp_gst").value) || 0;
+    var expenses = parseFloat(document.getElementById("bp_expenses").value) || 0;
+
+    var grandTotal = 0;
+    var missing = [];
+    stones.forEach(function(stone){
+      var rap = manualMode ? manualRap : (findRapRate(stone.shape, stone.colour, stone.purity, stone.size) || 0);
+      if (!manualMode && !rap) missing.push(stone.stockId);
+      var withoutGST = stone.size * (1 - discount/100) * (1 - less/100) * dollarRate * rap;
+      var withGST = withoutGST * (1 + gst/100);
+      grandTotal += (withGST - expenses);
+    });
+
+    var note = stones.length + " stone" + (stones.length===1?"":"s") + " · estimated total " + fmtINR(grandTotal);
+    if (missing.length){
+      note += " · no Rapaport data for " + missing.join(", ") + " — switch to Manual or convert those separately.";
+    }
+    document.getElementById("bp_preview").textContent = note;
+  }
+
+  document.getElementById("bp_rap_auto").addEventListener("change", function(){
+    document.getElementById("bp_rap_manual_value").disabled = true;
+    updateBulkPurchasePreview();
+  });
+  document.getElementById("bp_rap_manual").addEventListener("change", function(){
+    document.getElementById("bp_rap_manual_value").disabled = false;
+    updateBulkPurchasePreview();
+  });
+  ["bp_rap_manual_value","bp_discount","bp_less","bp_dollarrate","bp_gst","bp_expenses"].forEach(function(id){
+    document.getElementById(id).addEventListener("input", updateBulkPurchasePreview);
+  });
+
+  document.getElementById("btnBulkPurchase").addEventListener("click", function(){
+    if (selectedStock.size === 0) return;
+    var stones = bulkSelectedStones();
+    document.getElementById("bp_list").textContent = stones.length + " stones: " + stones.map(function(s){ return s.stockId; }).join(", ");
+    document.getElementById("bp_date").value = todayISO();
+    document.getElementById("bp_broker").value = "";
+    document.getElementById("bp_partner").value = "";
+    document.getElementById("bp_rap_auto").checked = true;
+    document.getElementById("bp_rap_manual_value").value = "";
+    document.getElementById("bp_rap_manual_value").disabled = true;
+    document.getElementById("bp_discount").value = "";
+    document.getElementById("bp_less").value = "";
+    document.getElementById("bp_dollarrate").value = "";
+    document.getElementById("bp_gst").value = "";
+    document.getElementById("bp_expenses").value = "";
+    document.getElementById("bp_paid").value = "Y";
+    updateBulkPurchasePreview();
+    openModal("overlayBulkPurchase");
+  });
+
+  document.getElementById("saveBulkPurchase").addEventListener("click", function(){
+    var stones = bulkSelectedStones();
+    if (stones.length === 0){ closeModal("overlayBulkPurchase"); return; }
+    var manualMode = document.getElementById("bp_rap_auto").checked === false;
+    var manualRap = parseFloat(document.getElementById("bp_rap_manual_value").value) || 0;
+    var date = document.getElementById("bp_date").value || todayISO();
+    var broker = document.getElementById("bp_broker").value.trim() || "—";
+    var partner = document.getElementById("bp_partner").value.trim() || "—";
+    var discount = parseFloat(document.getElementById("bp_discount").value) || 0;
+    var less = parseFloat(document.getElementById("bp_less").value) || 0;
+    var dollarRate = parseFloat(document.getElementById("bp_dollarrate").value) || 0;
+    var gst = parseFloat(document.getElementById("bp_gst").value) || 0;
+    var expenses = parseFloat(document.getElementById("bp_expenses").value) || 0;
+    var paid = document.getElementById("bp_paid").value;
+
+    var skipped = [];
+    stones.forEach(function(stone){
+      var rap = manualMode ? manualRap : findRapRate(stone.shape, stone.colour, stone.purity, stone.size);
+      if (!rap){ skipped.push(stone.stockId); return; }
+      var withoutGST = stone.size * (1 - discount/100) * (1 - less/100) * dollarRate * rap;
+      var withGST = withoutGST * (1 + gst/100);
+      var total = withGST - expenses;
+
+      state.purchases.push({
+        id: uid("PU-"),
+        stockId: nextPurchaseStockId(),
+        jangaadId: stone.stockId,
+        date: date,
+        supplier: stone.supplier || "",
+        supplierId: stone.supplierId || "",
+        broker: broker,
+        partner: partner,
+        shape: stone.shape,
+        size: stone.size,
+        colour: stone.colour,
+        purity: stone.purity,
+        lab: stone.lab,
+        location: stone.location,
+        customer: stone.customer || "",
+        customerId: stone.customerId || "",
+        customerDate: stone.customerDate || "",
+        rap: rap,
+        discount: discount,
+        less: less,
+        dollarRate: dollarRate,
+        gst: gst,
+        expenses: expenses,
+        total: total,
+        paid: paid
+      });
+      state.stones = state.stones.filter(function(s){ return s.stockId !== stone.stockId; });
+      selectedStock.delete(stone.stockId);
+    });
+
+    saveState(state);
+    renderAll();
+    closeModal("overlayBulkPurchase");
+    var converted = stones.length - skipped.length;
+    if (skipped.length){
+      showToast(converted + " converted. Skipped (no Rapaport rate): " + skipped.join(", ") + " — use Manual or convert individually.");
+    } else {
+      showToast(converted + " stone" + (converted===1?"":"s") + " converted to purchases.");
+    }
+  });
+
   // ---------- Delete entries ----------
+  function returnStoneToSupplier(stone, date, notes){
+    state.returns.push({
+      id: uid("RT-"),
+      stockId: stone.stockId,
+      date: date || todayISO(),
+      supplier: stone.supplier || "",
+      supplierId: stone.supplierId || "",
+      shape: stone.shape,
+      size: stone.size,
+      colour: stone.colour,
+      purity: stone.purity,
+      lab: stone.lab,
+      location: stone.location,
+      notes: notes || ""
+    });
+    state.stones = state.stones.filter(function(s){ return s.stockId !== stone.stockId; });
+  }
+
   function handleRowDelete(type, id){
-    if (type === "stone"){
+    if (type === "return-stone"){
       var stone = findStone(id);
       if (!stone) return;
-      if (!confirm("Remove " + id + " from jangaad stock? (e.g. returned to " + (stone.supplier||"the supplier") + ")")) return;
-      state.stones = state.stones.filter(function(s){ return s.stockId !== id; });
+      if (!confirm("Return " + id + " to " + (stone.supplier||"the supplier") + "? It'll be removed from Stock and logged in Returns. The next new jangaad entry will continue the series (this ID isn't reused).")) return;
+      returnStoneToSupplier(stone, todayISO(), "");
+      selectedStock.delete(id);
       saveState(state);
       renderAll();
-      showToast(id + " removed from jangaad stock.");
+      showToast(id + " returned to " + (stone.supplier||"supplier") + ".");
+    } else if (type === "delete-stone"){
+      var stoneD = findStone(id);
+      if (!stoneD) return;
+      if (!confirm("Delete " + id + " entirely? Use this only to correct a mistaken entry — it won't be logged in Returns, and the ID sequence will close the gap immediately.")) return;
+      state.stones = state.stones.filter(function(s){ return s.stockId !== id; });
+      selectedStock.delete(id);
+      compactAfterDelete(state.stones, "stockId", "JG", id, "jgSeq");
+      saveState(state);
+      renderAll();
+      showToast(id + " deleted.");
     } else if (type === "purchase"){
       var p = state.purchases.find(function(x){ return x.id === id; });
       if (!p) return;
-      if (!confirm("Delete this purchase record for " + p.stockId + "? This won't restore it to jangaad stock.")) return;
+      if (!confirm("Delete this purchase record for " + p.stockId + "? This won't restore it to jangaad stock, and the ID sequence will close the gap immediately.")) return;
+      var deletedStockId = p.stockId;
       state.purchases = state.purchases.filter(function(x){ return x.id !== id; });
+      compactAfterDelete(state.purchases, "stockId", "AK", deletedStockId, "akSeq");
       saveState(state);
       renderAll();
       showToast("Purchase deleted.");
+    } else if (type === "return"){
+      var ret = state.returns.find(function(x){ return x.id === id; });
+      if (!ret) return;
+      if (!confirm("Delete this return record for " + ret.stockId + "? This is just removing the log entry — it won't bring the stone back into Stock.")) return;
+      state.returns = state.returns.filter(function(x){ return x.id !== id; });
+      saveState(state);
+      renderAll();
+      showToast("Return record deleted.");
     } else if (type === "supplier"){
       var supplier = findSupplierById(id);
       if (!supplier) return;
@@ -1098,12 +1525,21 @@
         })
       };
     }
+    if (source === "returns"){
+      return {
+        title: "Returns",
+        headers: ["Date returned","Stock ID","Supplier","Supplier ID","Shape","Size","Colour","Purity","Lab","Location","Notes"],
+        rows: state.returns.map(function(r){
+          return [r.date, r.stockId, r.supplier || "", r.supplierId || "", r.shape || "", r.size !== undefined ? r.size.toFixed(2) : "", r.colour || "", r.purity || "", r.lab || "", r.location || "", r.notes || ""];
+        })
+      };
+    }
     return {
       title: "Purchases",
-      headers: ["Date","Stock ID","Supplier","Supplier ID","Customer","Customer ID","Broker","Shape","Size","Rap $/ct","Disc %","Less %","$ Rate","GST %","Expenses ₹","Total ₹","Paid"],
+      headers: ["Date","Stock ID","Jangaad ID","Supplier","Supplier ID","Customer","Customer ID","Broker","Shape","Size","Rap $/ct","Disc %","Less %","$ Rate","GST %","Expenses ₹","Total ₹","Paid"],
       rows: state.purchases.map(function(p){
         return [
-          p.date, p.stockId, p.supplier || "", p.supplierId || "", p.customer || "", p.customerId || "", p.broker, p.shape || "", p.size !== undefined ? p.size.toFixed(2) : "",
+          p.date, p.stockId, p.jangaadId || "", p.supplier || "", p.supplierId || "", p.customer || "", p.customerId || "", p.broker, p.shape || "", p.size !== undefined ? p.size.toFixed(2) : "",
           p.rap, p.discount, p.less, p.dollarRate, p.gst, p.expenses, p.total.toFixed(2), p.paid === "Y" ? "Paid" : "Not paid"
         ];
       })
